@@ -1,5 +1,5 @@
 /*jshint esversion: 6 */
-let download = require("download-file");
+let download = require("download");
 let inquirer = require("inquirer");
 let fs = require("fs");
 let mv = require("mv");
@@ -25,17 +25,17 @@ inquirer.prompt([{
     name: "downloadOptions",
     message: "Download:",
     choices: [{
-      name: "Exam Paper",
-      value: ["exam"]
+      name: "Exam Paper and resource booklet",
+      value: ["exam", "resource"]
     }, {
-      name: "Exam paper and marking schedule",
-      value: ["exam", "marking"]
+      name: "Exam paper, marking schedule and resource booklet",
+      value: ["exam", "marking", "resource"]
     }, {
-      name: "Exam paper, marking schedule and excellence exemplar",
-      value: ["exam", "marking", "excellence"]
+      name: "Exam paper, marking schedule, excellence exemplar and resource booklet",
+      value: ["exam", "marking", "excellence", "resource"]
     }, {
       name: "Everything",
-      value: ["exam", "marking", "achieved", "merit", "excellence"]
+      value: ["exam", "marking", "notachieved", "achieved", "merit", "excellence", "resource"]
     }]
   }, {
     type: "list",
@@ -49,7 +49,7 @@ inquirer.prompt([{
       value: false
     }]
   }
-
+  
 ]).then(val => {
   if (!val.newSaveLocation) {
     inquirer.prompt([{
@@ -103,15 +103,17 @@ function parseInput(result, directory) {
 
 
 let linkAnswers = (year, standard) => {
-  let baseLink = "http://www.nzqa.govt.nz/nqfdocs/ncea-resource/";
+  let baseLink = "http://www.nzqa.govt.nz/nqfdocs/ncea-resource";
   let obj = {
     year: year,
     standard: standard,
-    exam: baseLink + "exams/" + year + "/" + standard + "-exm-" + year + ".pdf",
-    marking: baseLink + "schedules/" + year + "/" + standard + "-ass-" + year + ".pdf",
-    achieved: baseLink + "exemplars/" + year + "/" + standard + "-exp-" + year + "-achieved.pdf",
-    merit: baseLink + "exemplars/" + year + "/" + standard + "-exp-" + year + "-merit.pdf",
-    excellence: baseLink + "exemplars/" + year + "/" + standard + "-exp-" + year + "-excellence.pdf"
+    exam: `${baseLink}/exams/${year}/${standard}-exm-${year}.pdf`,
+    marking: `${baseLink}/schedules/${year}/${standard}-ass-${year}.pdf`, 
+    notachieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-notachieved.pdf`,
+    achieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-achieved.pdf`,
+    merit: `${baseLink}/examplars/${year}/${standard}-exp-${year}-merit.pdf`,
+    excellence: `${baseLink}/examplars/${year}/${standard}-exp-${year}-excellence.pdf`,
+    resource: `${baseLink}/exams/${year}/${standard}-res-${year}.pdf`   
   };
   return obj;
 };
@@ -154,13 +156,27 @@ let getSubject = pdfLink =>  {
 let downloadPaper = (baseFolder, object, toDownload) => {
   //toDownload: array of strings with the names of the files to download (object[toDownload(0)])
   // console.log(baseFolder);
-  console.log(`Downloading ${object.standard} to ${baseFolder + object.standard}`);
+  console.log(`Downloading ${object.year} ${object.standard} standard papers to ${baseFolder + object.standard}`);
 
+  let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
+  let folder = baseFolder + object.standard;
+
+  Promise.all(toDownload.map(i=>download(object[i], folder, {
+      filename: getFileName(object, i)
+    }))).then(val=>{
+      
+    }).catch(err=>{
+      if (err.name == "HTTPError" && err.statusCode == 404) {
+        console.log(`404 (File not found) error downloading '${err.url}'`);
+      }
+    });
+  
+/*
   completed = 0;
   let downloadFile = (object, type) => {
     let options = {
       directory: baseFolder + object.standard + "/",
-      /*type is string: paper/excellence/marking*/
+      //type is string: paper/excellence/marking
       filename: object.standard + "-" + object.year + "-" + type + ".pdf"
     };
 
@@ -195,4 +211,5 @@ let downloadPaper = (baseFolder, object, toDownload) => {
       console.log(`Error moving folder: ${err}`);
     });
   }
+  */
 };
