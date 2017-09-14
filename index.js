@@ -4,9 +4,42 @@ let inquirer = require("inquirer");
 let fs = require("fs");
 let mv = require("mv");
 let pdf2json = require("pdf2json");
-let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/"; //"C:/Users/Rio/Documents/NCEAPastPapers/";
+let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/"; 
+let regFolder = new RegExp(/^[^\>\<\\\"\/\\\|\?\*]*[^ \.]$/);
+//"C:/Users/Rio/Documents/NCEAPastPapers/";
 
 let completed = 0; //How many downloads have finished (error or success)
+
+let name = {
+  capitalizeWord: (string, justTheFirstWord) => {
+    if (justTheFirstWord) {
+      return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+    else {
+      let arr = string.split(" "); //Only works with spaces. Consider looping with reg.exec to capitalize and add the matched whitespace character
+      let str = "";
+      for (let i of arr) {
+        str += name.capitalizeWord(i, true);
+      }
+      return str;
+    }
+  },
+  standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName)}`,
+  standardFiles: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
+  concatDirectories: (...arr) => {
+    arr = arr.map(str => str.replace("\\", "/")); //Replace backslashes with slash
+    let str = "";
+    for (let i of arr) {
+      str += i;
+      if (i.substr(-1) != "/") {
+        str += "/"; //Add a backslash if there isn't one at the end
+      }
+    }
+    return str;
+  }
+};
+
+
 
 inquirer.registerPrompt("directory", require("inquirer-directory"));
 
@@ -15,6 +48,16 @@ inquirer.prompt([{
     name: "standard",
     message: "Standard code: ",
     validate: val => (val.match(/^\s*\d+\s*$/)) ? true : "Enter numerical standard code"
+}, /*{
+    type: "input",
+    name: "subjectName",
+    message: "Subject Name: ",
+    validate: val => val.match(regFolder) ? true: "Please enter a valid folder name"
+  },*/ {
+    type: "input",
+    name: "standardName",
+    message: "Name of standard (e.g. Mechanics): ",
+    validate: val => val.match(regFolder) ? true: "Please enter a valid folder name"
   }, {
     type: "input",
     name: "year",
@@ -25,17 +68,17 @@ inquirer.prompt([{
     name: "downloadOptions",
     message: "Download:",
     choices: [{
-      name: "Exam Paper and resource booklet",
-      value: ["exam", "resource"]
+      name: "Exam paper and marking schedule",
+      value: ["exam", "marking"]
     }, {
-      name: "Exam paper, marking schedule and resource booklet",
+      name: "Exam Paper, marking schedule and resource booklet",
       value: ["exam", "marking", "resource"]
     }, {
-      name: "Exam paper, marking schedule, excellence exemplar and resource booklet",
-      value: ["exam", "marking", "excellence", "resource"]
+      name: "Exam paper, marking schedule, resource booklet and excellence exemplar",
+      value: ["exam", "marking", "resource", "excellence"]
     }, {
       name: "Everything",
-      value: ["exam", "marking", "notachieved", "achieved", "merit", "excellence", "resource"]
+      value: ["exam", "marking", "resource", "notachieved", "achieved", "merit", "excellence"]
     }]
   }, {
     type: "list",
@@ -55,13 +98,25 @@ inquirer.prompt([{
     inquirer.prompt([{
       type: "directory",
       name: "saveLocation",
-      message: "Save to:",
+      message: "Base folder to save in: ",
       basePath: baseFolder
-    }]).then(dir => parseInput(val, dir.saveLocation)).catch(err => {
-      throw new Error(err)
+    }]).then(dir => {
+      let dirNames = dir.saveLocation.replace("\\", "/"); //array of directories
+      dirNames = dirNames.split("/");
+      folderName = dirNames[dirNames.length - 1]; //The name of the 'deepest' folder/folder directly above the file
+      if (folderName.match(val.standard) || folderName.toLowerCase().match(val.standardName.trim().toLowerCase())) {
+        //If the folder name has the standard code or name in it, assume that the user wants the files directly in there
+        parseInput(val, name.concatDirectories(baseFolder, dir.saveLocation));
+      }
+      else {
+        parseInput(val, name.concatDirectories(baseFolder, dir.saveLocation, name.standardFolder(val.standard, val.standardName)));
+      }
+    }
+  ).catch(err => {
+      throw new Error(err);
     });
   } else {
-    parseInput(val, baseFolder);
+    parseInput(val, name.concatDirectories(baseFolder, name.standardFolder(val.standard, val.standardName)));
   }
 
 }).catch(err => {
@@ -70,6 +125,8 @@ inquirer.prompt([{
 
 
 function parseInput(result, directory) {
+  console.log(result);
+  console.log(directory);
   let year = parseInt(result.year, 10);
   let standard = parseInt(result.standard, 10);
 
@@ -153,18 +210,18 @@ let getSubject = pdfLink =>  {
 };
 
 
-let downloadPaper = (baseFolder, object, toDownload) => {
-  //toDownload: array of strings with the names of the files to download (object[toDownload(0)])
-  // console.log(baseFolder);
-  console.log(`Downloading ${object.year} ${object.standard} standard papers to ${baseFolder + object.standard}`);
 
-  let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
-  let folder = baseFolder + object.standard;
+let downloadPaper = (folder, object, toDownload) => {
+  //return 0; //Temporary
+  console.log(`Downloading ${object.year} ${object.standardName} (${object.standard}) papers to ${folder}`);
+
+  //let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
+  //let folder = baseFolder;
 
   Promise.all(toDownload.map(i=>download(object[i], folder, {
-      filename: getFileName(object, i)
-    }))).then(val=>{
-      
+      filename: name.standardFiles(object.standard, object.year , i)
+    }))).then(val=> {
+      console.log(`Downloads finished: ${val}`);
     }).catch(err=>{
       if (err.name == "HTTPError" && err.statusCode == 404) {
         console.log(`404 (File not found) error downloading '${err.url}'`);
