@@ -3,7 +3,7 @@ let download = require("download");
 let inquirer = require("inquirer");
 let fs = require("fs");
 let mv = require("mv");
-let pdf2json = require("pdf2json");
+//let pdf2json = require("pdf2json");
 let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/"; 
 let regFolder = new RegExp(/^[^\>\<\\\"\/\\\|\?\*]*[^ \.]$/);
 //"C:/Users/Rio/Documents/NCEAPastPapers/";
@@ -24,21 +24,20 @@ let name = {
       return str;
     }
   },
-  standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName)}`,
-  standardFiles: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
+  standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName, false)}`,
+  standardFile: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
   concatDirectories: (...arr) => {
     arr = arr.map(str => str.replace("\\", "/")); //Replace backslashes with slash
     let str = "";
     for (let i of arr) {
       str += i;
-      if (i.substr(-1) != "/") {
-        str += "/"; //Add a backslash if there isn't one at the end
+      if (i.substr(-1) != "/" && (i == arr[arr.length - 1] && !i.match(/.+\.\w+$/))) {
+        str += "/"; //Add a backslash if there isn't one at the end, but not if it is the last one in the array and is a file 
       }
     }
     return str;
   }
 };
-
 
 
 inquirer.registerPrompt("directory", require("inquirer-directory"));
@@ -100,18 +99,7 @@ inquirer.prompt([{
       name: "saveLocation",
       message: "Base folder to save in: ",
       basePath: baseFolder
-    }]).then(dir => {
-      let dirNames = dir.saveLocation.replace("\\", "/"); //array of directories
-      dirNames = dirNames.split("/");
-      folderName = dirNames[dirNames.length - 1]; //The name of the 'deepest' folder/folder directly above the file
-      if (folderName.match(val.standard) || folderName.toLowerCase().match(val.standardName.trim().toLowerCase())) {
-        //If the folder name has the standard code or name in it, assume that the user wants the files directly in there
-        parseInput(val, name.concatDirectories(baseFolder, dir.saveLocation));
-      }
-      else {
-        parseInput(val, name.concatDirectories(baseFolder, dir.saveLocation, name.standardFolder(val.standard, val.standardName)));
-      }
-    }
+    }]).then(dir => parseInput(val, chooseDirectory(val, dir.saveLocation))
   ).catch(err => {
       throw new Error(err);
     });
@@ -124,9 +112,37 @@ inquirer.prompt([{
 });
 
 
+function smartDirectoryLookup(userOptions, directory, filter) {
+  let dirNames = name.concatDirectories(directory); //clean up \
+  dirNames = dirNames.split("/"); //Array of directories
+  folderName = dirNames[dirNames.length - 2]; //The name of the 'deepest' folder/folder directly above the file. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
+  
+  let folderMatchesStandard = (folder, code, name) => folder.match(code) || folder.toLowerCase().match(name.trim().toLowerCase());
+
+  if (folderMatchesStandard(folderName, userOptions.standard, userOptions.standardName)) {
+    //If the folder name has the standard code or name in it, assume that the user wants the files directly in there
+    return name.concatDirectories(baseFolder, directory);
+  }
+
+  else {
+    //If the folder has other folders in it which has the standard code or name in it
+    let folders = fs.readdirSync(name.concatDirectories(baseFolder, directory)).filter(name => !name.match(/\.\w+$/g));
+    //Get list of stuff in directory, and remove files from it
+    for (let i of folders) {
+      if (folderMatchesStandard(i, val.standard, val.standardName)) {
+        //Find a way to repeat this
+        return name.concatDirectories(baseFolder, directory, i);
+      }
+    }
+
+    //None found
+    return name.concatDirectories(baseFolder, directory)
+  }
+}
+
 function parseInput(result, directory) {
-  console.log(result);
-  console.log(directory);
+  // console.log(result);
+  console.log(`Downloading to ${directory}`);
   let year = parseInt(result.year, 10);
   let standard = parseInt(result.standard, 10);
 
@@ -138,7 +154,7 @@ function parseInput(result, directory) {
     for (let i = 2012; i < new Date().getFullYear(); i++) {
       //download all exams up to current year
       // console.log(linkAnswers(i, standard));
-      downloadPaper(directory, linkAnswers(i, standard), result.downloadOptions);
+      downloadPaper(directory, linkAnswers(i, standard, result.standardName), result.downloadOptions);
     }
     return 0; //Exit function
   }
@@ -152,31 +168,32 @@ function parseInput(result, directory) {
   }
 
   // console.log(linkAnswers(year, standard));
-  downloadPaper(directory, linkAnswers(year, standard), result.downloadOptions);
+  downloadPaper(directory, linkAnswers(year, standard, result.standardName), result.downloadOptions);
   return 0;
 }
 
 
 
 
-let linkAnswers = (year, standard) => {
+let linkAnswers = (year, standard, standardName) => {
   let baseLink = "http://www.nzqa.govt.nz/nqfdocs/ncea-resource";
   let obj = {
     year: year,
     standard: standard,
+    standardName: standardName,
     exam: `${baseLink}/exams/${year}/${standard}-exm-${year}.pdf`,
     marking: `${baseLink}/schedules/${year}/${standard}-ass-${year}.pdf`, 
     notachieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-notachieved.pdf`,
     achieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-achieved.pdf`,
     merit: `${baseLink}/examplars/${year}/${standard}-exp-${year}-merit.pdf`,
     excellence: `${baseLink}/examplars/${year}/${standard}-exp-${year}-excellence.pdf`,
-    resource: `${baseLink}/exams/${year}/${standard}-res-${year}.pdf`   
+    resource: `${baseLink}/exams/${year}/${standard}-res-${year}.pdf`
   };
   return obj;
 };
 
 
-
+/*
 let getSubject = pdfLink =>  {
   let pdfParser = new pdf2json(); 
   let reg = /Level (\d) (\w+) \((d+)\) (\d{4})/g; 
@@ -209,17 +226,27 @@ let getSubject = pdfLink =>  {
   });
 };
 
-
+*/
 
 let downloadPaper = (folder, object, toDownload) => {
-  //return 0; //Temporary
+  // return 0; //Temporary
   console.log(`Downloading ${object.year} ${object.standardName} (${object.standard}) papers to ${folder}`);
+
 
   //let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
   //let folder = baseFolder;
+  for (let i = toDownload.length - 1; i >= 0; i--) {
+    if (fs.existsSync(name.concatDirectories(folder, name.standardFile(object.standard, object.year, toDownload[i])))) {
+      //Checks if the file that is going to be created actually exists
+      console.log(`'${name.standardFile(object.standard, object.year, toDownload[i])}' already exists: skipping download`);
+      toDownload = toDownload.splice(i, 1); //Remove element from the array
+      //Going in reverse, so removing an element will have no effect on the ones before it
+    }
+  }
 
+  return 0;
   Promise.all(toDownload.map(i=>download(object[i], folder, {
-      filename: name.standardFiles(object.standard, object.year , i)
+      filename: name.standardFile(object.standard, object.year , i)
     }))).then(val=> {
       console.log(`Downloads finished: ${val}`);
     }).catch(err=>{
