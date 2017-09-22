@@ -2,12 +2,11 @@
 let download = require("download");
 let inquirer = require("inquirer");
 let fs = require("fs");
-let mv = require("mv");
+// let mv = require("mv");
 //let pdf2json = require("pdf2json");
 let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/"; 
 
 
-let completed = 0; //How many downloads have finished (error or success)
 
 let reg = {
   file: new RegExp(/\.\w+$/g),
@@ -33,7 +32,7 @@ let name = {
   },
   standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName, false)}`,
   standardFile: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
-  concatDirectories: (...arr) => {
+  concatDir: (...arr) => {
     arr = arr.map(str => str.replace("\\", "/")); //Replace backslashes with slash
     let str = "";
     for (let i of arr) {
@@ -54,12 +53,7 @@ inquirer.prompt([{
     name: "standard",
     message: "Standard code: ",
     validate: val => (val.match(reg.integer)) ? true : "Enter numerical standard code"
-}, /*{
-    type: "input",
-    name: "subjectName",
-    message: "Subject Name: ",
-    validate: val => val.match(reg.folderWindows) ? true: "Please enter a valid folder name"
-  },*/ {
+  }, {
     type: "input",
     name: "standardName",
     message: "Name of standard (e.g. Mechanics): ",
@@ -100,33 +94,50 @@ inquirer.prompt([{
   }
   
 ]).then(val => {
+
+  let func = (options, dir) => {
+    //Because async/promises
+    let newDir = directorySearch(dir, 
+      folder => (folder.match(val.standardCode) || folder.toLowerCase().match(val.standardName.toLowerCase)), 2);
+    //newDir is the full path of the new directory
+    if (newDir) {
+      console.log(`Automatically detected folder, ${name.concatDir(newDir)}`);
+      parseInput(val, name.concatDir(newDir));
+    }
+    else {
+      console.log(`Downloading to folder, ${name.concatDir(baseFolder, deepest)}`);
+      parseInput(val, name.concatDir(baseFolder, name.standardFolder(val.standardCode, val.standardName)));
+    }
+  };
+  
   if (!val.newSaveLocation) {
     inquirer.prompt([{
       type: "directory",
       name: "saveLocation",
       message: "Base folder to save in: ",
       basePath: baseFolder
-    }]).then(dir => parseInput(val, chooseDirectory(val, dir.saveLocation))
-  ).catch(err => {
+    }]).then(newDir => func(val, name.concatDir((baseFolder, newDir.saveLocation)))).catch(err => {
       throw new Error(err);
     });
-  } else {
-    parseInput(val, name.concatDirectories(baseFolder, name.standardFolder(val.standard, val.standardName)));
   }
-
+  else {
+    func(val, baseFolder);
+  }
 }).catch(err => {
   throw new Error(err);
 });
 
 
+
+
 function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
   //Directory filter accepts the directory name and full path name as arguments
   //maxSearchDepth is the levels it will travel. 0 for no limit
-  directory = name.concatDirectories(directory);
-  let dirArr = directory.split("/"); //Clean up backslashes, create array of directories
+  directory = name.concatDir(directory); //clean up backslashes
+  let dirArr = directory.split("/"); //create array of directories
   deepest = dirArr[dirArr.length - 2]; //The name of the 'deepest' directory. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
 
-  if (directoryFilter(deepest)) return directory; //Check if the current directory matches the function
+  if (directoryFilter(deepest, directory)) return directory; //Check if the current directory matches the function
  
   else {
     //Recursive search function
@@ -135,15 +146,18 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
 
       try {
         let folders = fs.readdirSync(directory).filter(name => !name.match(reg.file));
+        console.log(folders);
+        console.log("!");
         //Get list of stuff in directory, and remove files from it
         for (let i of folders) {
           //Look through each subdirectory
-          if (directoryFilter(i, name.concatDirectories(directory, i))) return name.concatDirectories(directory, i);
+          let dirPath = name.concatDir(directory, i); //Full path of the subdirectory
+          if (directoryFilter(i, dirPath)) return dirPath;
           //Return if matches 
 
           else if (depth < maxDepth || depth === 0) {
             //Go deeper: looping through each subdirectory until maximum depth reached
-            let val = search(name.concatDirectories(directory, i), depth + 1, maxDepth);
+            let val = search(dirPath, depth + 1, maxDepth);
             //Return it only if it has successfully gotten a match
             if (val) return val;
 
@@ -177,7 +191,6 @@ function parseInput(result, directory) {
   if (result.year.trim() === "") {
     for (let i = 2012; i < new Date().getFullYear(); i++) {
       //download all exams up to current year
-      // console.log(linkAnswers(i, standard));
       downloadPaper(directory, linkAnswers(i, standard, result.standardName), result.downloadOptions);
     }
     return 0; //Exit function
@@ -226,7 +239,7 @@ let downloadPaper = (folder, object, toDownload) => {
   //let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
   //let folder = baseFolder;
   for (let i = toDownload.length - 1; i >= 0; i--) {
-    if (fs.existsSync(name.concatDirectories(folder, name.standardFile(object.standard, object.year, toDownload[i])))) {
+    if (fs.existsSync(name.concatDir(folder, name.standardFile(object.standard, object.year, toDownload[i])))) {
       //Checks if the file that is going to be created actually exists
       console.log(`'${name.standardFile(object.standard, object.year, toDownload[i])}' already exists: skipping download`);
       toDownload = toDownload.splice(i, 1); //Remove element from the array
