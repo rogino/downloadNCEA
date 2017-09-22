@@ -5,10 +5,17 @@ let fs = require("fs");
 let mv = require("mv");
 //let pdf2json = require("pdf2json");
 let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/"; 
-let regFolder = new RegExp(/^[^\>\<\\\"\/\\\|\?\*]*[^ \.]$/);
-//"C:/Users/Rio/Documents/NCEAPastPapers/";
+
 
 let completed = 0; //How many downloads have finished (error or success)
+
+let reg = {
+  file: new RegExp(/\.\w+$/g),
+  directoryWindows: new RegExp(/^[^\>\<\\\"\/\|\?\*]*[^ \.]$/),
+  integer: new RegExp(/^\s*\d+\s*$/),
+  year_2_4: new RegExp(/(?:^\s*(?:\d{2}|\d{4})?\s*$)?/)
+};
+
 
 let name = {
   capitalizeWord: (string, justTheFirstWord) => {
@@ -46,22 +53,22 @@ inquirer.prompt([{
     type: "input",
     name: "standard",
     message: "Standard code: ",
-    validate: val => (val.match(/^\s*\d+\s*$/)) ? true : "Enter numerical standard code"
+    validate: val => (val.match(reg.integer)) ? true : "Enter numerical standard code"
 }, /*{
     type: "input",
     name: "subjectName",
     message: "Subject Name: ",
-    validate: val => val.match(regFolder) ? true: "Please enter a valid folder name"
+    validate: val => val.match(reg.folderWindows) ? true: "Please enter a valid folder name"
   },*/ {
     type: "input",
     name: "standardName",
     message: "Name of standard (e.g. Mechanics): ",
-    validate: val => val.match(regFolder) ? true: "Please enter a valid folder name"
+    validate: val => val.match(reg.folderWindows) ? true: "Please enter a valid folder name"
   }, {
     type: "input",
     name: "year",
     message: "Year of exam (or nothing for all from 2012): ",
-    validate: val => (val.match(/(?:^\s*(?:\d{2}|\d{4})?\s*$)?/) ? true : "Enter 2/4 digit year, or nothing for all years")
+    validate: val => (val.match(reg.year_2_4) ? true : "Enter 2/4 digit year, or nothing for all years")
   }, {
     type: "list",
     name: "downloadOptions",
@@ -112,33 +119,50 @@ inquirer.prompt([{
 });
 
 
-function smartDirectoryLookup(userOptions, directory, filter) {
-  let dirNames = name.concatDirectories(directory); //clean up \
-  dirNames = dirNames.split("/"); //Array of directories
-  folderName = dirNames[dirNames.length - 2]; //The name of the 'deepest' folder/folder directly above the file. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
-  
-  let folderMatchesStandard = (folder, code, name) => folder.match(code) || folder.toLowerCase().match(name.trim().toLowerCase());
+function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
+  //Directory filter accepts the directory name and full path name as arguments
+  //maxSearchDepth is the levels it will travel. 0 for no limit
+  directory = name.concatDirectories(directory);
+  let dirArr = directory.split("/"); //Clean up backslashes, create array of directories
+  deepest = dirArr[dirArr.length - 2]; //The name of the 'deepest' directory. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
 
-  if (folderMatchesStandard(folderName, userOptions.standard, userOptions.standardName)) {
-    //If the folder name has the standard code or name in it, assume that the user wants the files directly in there
-    return name.concatDirectories(baseFolder, directory);
-  }
-
+  if (directoryFilter(deepest)) return directory; //Check if the current directory matches the function
+ 
   else {
-    //If the folder has other folders in it which has the standard code or name in it
-    let folders = fs.readdirSync(name.concatDirectories(baseFolder, directory)).filter(name => !name.match(/\.\w+$/g));
-    //Get list of stuff in directory, and remove files from it
-    for (let i of folders) {
-      if (folderMatchesStandard(i, val.standard, val.standardName)) {
-        //Find a way to repeat this
-        return name.concatDirectories(baseFolder, directory, i);
-      }
-    }
+    //Recursive search function
+    let search = (directory, depth, maxDepth) => {
+      //Directory: will scan contents of the directory. Depth: current depth, starts at 1. Max depth: how deep you can go. 0 is no limit. 
 
-    //None found
-    return name.concatDirectories(baseFolder, directory)
+      try {
+        let folders = fs.readdirSync(directory).filter(name => !name.match(reg.file));
+        //Get list of stuff in directory, and remove files from it
+        for (let i of folders) {
+          //Look through each subdirectory
+          if (directoryFilter(i, name.concatDirectories(directory, i))) return name.concatDirectories(directory, i);
+          //Return if matches 
+
+          else if (depth < maxDepth || depth === 0) {
+            //Go deeper: looping through each subdirectory until maximum depth reached
+            let val = search(name.concatDirectories(directory, i), depth + 1, maxDepth);
+            //Return it only if it has successfully gotten a match
+            if (val) return val;
+
+          }
+        }
+      }
+      catch(err) {
+        console.log(err);
+        //Errors with ENOTDIR (not directory) or EPERM (not permitted) etc. 
+      }
+    };
+    let dirName = search(directory, 1, maxSearchDepth); //Start depth at 0
+    if (dirName) return dirName;
   }
+
+  return false; //No matches
 }
+
+
 
 function parseInput(result, directory) {
   // console.log(result);
@@ -193,40 +217,6 @@ let linkAnswers = (year, standard, standardName) => {
 };
 
 
-/*
-let getSubject = pdfLink =>  {
-  let pdfParser = new pdf2json(); 
-  let reg = /Level (\d) (\w+) \((d+)\) (\d{4})/g; 
-
-  pdfParser.loadPDF(pdfLink); 
-  
-  return new Promise((resolve, reject) =>  {
-    pdfParser.on("pdfParser_dataError", errData =>  {
-      reject(errData.parserError); 
-    }); 
-
-    pdfParser.on("pdfParser_dataReady", pdfData =>  {
-
-      let text = pdfData.formImage.Agency; 
-
-      if (text.search(reg) > -1) {
-        let arr = reg.exec(text);
-        let obj = {
-          yearLevel: arr[1],
-          subject: arr[2],
-          standard: arr[3],
-          year: arr[4]
-        };
-
-        resolve(obj); 
-      } else {
-        reject(text); 
-      }
-    }); 
-  });
-};
-
-*/
 
 let downloadPaper = (folder, object, toDownload) => {
   // return 0; //Temporary
