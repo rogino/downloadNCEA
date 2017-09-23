@@ -10,7 +10,7 @@ let baseFolder = "C:/Users/Rio/OneDrive - Christchurch Boys' High School/School 
 
 let reg = {
   file: new RegExp(/\.\w+$/g),
-  directoryWindows: new RegExp(/^[^\>\<\\\"\/\|\?\*]*[^ \.]$/),
+  directoryWindows: new RegExp(/^\s*[^\>\<\\\"\/\|\?\*\.]*\S*$/g),
   integer: new RegExp(/^\s*\d+\s*$/),
   year_2_4: new RegExp(/(?:^\s*(?:\d{2}|\d{4})?\s*$)?/)
 };
@@ -33,7 +33,7 @@ let name = {
   standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName, false)}`,
   standardFile: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
   concatDir: (...arr) => {
-    arr = arr.map(str => str.replace("\\", "/")); //Replace backslashes with slash
+    arr = arr.map(str => str.replace("\\", "/")).filter(str => str.length !== 0); //Replace backslashes with slash, remove empty strings
     let str = "";
     for (let i of arr) {
       str += i;
@@ -98,14 +98,14 @@ inquirer.prompt([{
   let func = (options, dir) => {
     //Because async/promises
     let newDir = directorySearch(dir, 
-      folder => (folder.includes(val.standardCode) || folder.toLowerCase().includes(val.standardName.toLowerCase)), 2);
+      folder => (folder.includes(val.standard) || folder.toLowerCase().includes(val.standardName.toLowerCase())), 3);
     //newDir is the full path of the new directory
     if (newDir) {
       console.log(`Automatically detected folder, ${name.concatDir(newDir)}`);
       parseInput(val, newDir);
     }
     else {
-      console.log(`Downloading to folder, ${name.concatDir(baseFolder, deepest)}`);
+      console.log(`Downloading to folder, ${name.concatDir(dir, name.standardFolder(val.standard, val.standardName))}`);
       parseInput(val, name.concatDir(dir, name.standardFolder(val.standard, val.standardName)));
     }
   };
@@ -116,7 +116,10 @@ inquirer.prompt([{
       name: "saveLocation",
       message: "Base folder to save in: ",
       basePath: baseFolder
-    }]).then(newDir => func(val, name.concatDir((baseFolder, newDir.saveLocation)))).catch(err => {
+    }]).then(newDir => {
+      func(val, name.concatDir(baseFolder, newDir.saveLocation));
+    }
+    ).catch(err => {
       throw new Error(err);
     });
   }
@@ -128,13 +131,13 @@ inquirer.prompt([{
 });
 
 
-
+//console.log(directorySearch("C:/Users/Rio/OneDrive - Christchurch Boys' High School/School Work/Year 12/NCEAPastPapers/",str => (str.includes("91171") || str.toLowerCase().includes("mechanics")), 3));
 
 function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
   //Directory filter accepts the directory name and full path name as arguments
   //maxSearchDepth is the levels it will travel. 0 for no limit
   directory = name.concatDir(directory); //clean up backslashes
-
+  console.log(`Searching directory: ${directory}`);
   let dirArr = directory.split("/"); //create array of directories
   deepest = dirArr[dirArr.length - 2]; //The name of the 'deepest' directory. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
 
@@ -148,7 +151,6 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
 
       try {
         let folders = fs.readdirSync(directory).filter(name => !name.match(reg.file));
-      
         //Get list of stuff in directory, and remove files from it
         for (let i of folders) {
           //Look through each subdirectory
@@ -166,12 +168,14 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
         }
       }
       catch(err) {
-        console.log(err);
+        if (!(err.code === "ENOTDIR" || err.code === "EPERM")) {
+          console.log(err);
+        }
         //Errors with ENOTDIR (not directory) or EPERM (not permitted) etc. 
       }
     };
     let dirName = search(directory, 1, maxSearchDepth); //Start depth at 0
-    console.log(dirName);
+    //console.log(dirName);
     if (dirName) return dirName;
   }
 
@@ -182,7 +186,7 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
 
 function parseInput(result, directory) {
   // console.log(result);
-  console.log(`Downloading to ${directory}`);
+  // console.log(`Downloading to ${directory}`);
   let year = parseInt(result.year, 10);
   let standard = parseInt(result.standard, 10);
 
@@ -235,7 +239,7 @@ let linkAnswers = (year, standard, standardName) => {
 
 let downloadPaper = (folder, object, toDownload) => {
   // return 0; //Temporary
-  console.log(`Downloading ${object.year} ${object.standardName} (${object.standard}) papers to ${folder}`);
+  console.log(`Downloading ${object.year} ${object.standard} papers to ${folder}`);
 
 
   //let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
@@ -249,11 +253,10 @@ let downloadPaper = (folder, object, toDownload) => {
     }
   }
 
-  return 0;
   Promise.all(toDownload.map(i=>download(object[i], folder, {
       filename: name.standardFile(object.standard, object.year , i)
     }))).then(val=> {
-      console.log(`Downloads for ${object.year} ${object.standardName} finished`);
+      console.log(`Downloads for ${object.year} ${object.standard} finished`);
     }).catch(err=>{
       if (err.name == "HTTPError" && err.statusCode == 404) {
         console.log(`404 (File not found) error downloading '${err.url}'`);
