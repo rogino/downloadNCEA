@@ -31,7 +31,7 @@ let name = {
     }
   },
   standardFolder: (standardCode, standardName) => `${standardCode} ${name.capitalizeWord(standardName, false)}`,
-  standardFile: (standard, year, type) => `${standard}-${year}-${type}.pdf`,
+  standardFile: (standardCode, year, type) => `${standardCode}-${year}-${type}.pdf`,
   concatDir: (...arr) => {
     arr = arr.map(str => str.replace("\\", "/")).filter(str => str.length !== 0); //Replace backslashes with slash, remove empty strings
     let str = "";
@@ -50,7 +50,7 @@ inquirer.registerPrompt("directory", require("inquirer-directory"));
 
 inquirer.prompt([{
     type: "input",
-    name: "standard",
+    name: "standardCode",
     message: "Standard code: ",
     validate: val => (val.match(reg.integer)) ? true : "Enter numerical standard code"
   }, {
@@ -98,15 +98,15 @@ inquirer.prompt([{
   let func = (options, dir) => {
     //Because async/promises
     let newDir = directorySearch(dir, 
-      folder => (folder.includes(val.standard) || folder.toLowerCase().includes(val.standardName.toLowerCase())), 3);
+      folder => (folder.includes(val.standardCode) || folder.toLowerCase().includes(val.standardName.toLowerCase())), 3);
     //newDir is the full path of the new directory
     if (newDir) {
       console.log(`Automatically detected folder, ${name.concatDir(newDir)}`);
       parseInput(val, newDir);
     }
     else {
-      console.log(`Downloading to folder, ${name.concatDir(dir, name.standardFolder(val.standard, val.standardName))}`);
-      parseInput(val, name.concatDir(dir, name.standardFolder(val.standard, val.standardName)));
+      console.log(`Downloading to folder, ${name.concatDir(dir, name.standardFolder(val.standardCode, val.standardName))}`);
+      parseInput(val, name.concatDir(dir, name.standardFolder(val.standardCode, val.standardName)));
     }
   };
   
@@ -188,16 +188,16 @@ function parseInput(result, directory) {
   // console.log(result);
   // console.log(`Downloading to ${directory}`);
   let year = parseInt(result.year, 10);
-  let standard = parseInt(result.standard, 10);
+  let standardCode = parseInt(result.standardCode, 10);
 
-  if (isNaN(standard)) {
+  if (isNaN(standardCode)) {
     throw new TypeError();
   }
 
   if (result.year.trim() === "") {
     for (let i = 2012; i < new Date().getFullYear(); i++) {
       //download all exams up to current year
-      downloadPaper(directory, linkAnswers(i, standard, result.standardName), result.downloadOptions);
+      downloadPaper(directory, linkAnswers(i, standardCode, result.standardName), result.downloadOptions);
     }
     return 0; //Exit function
   }
@@ -210,27 +210,26 @@ function parseInput(result, directory) {
     year = Math.floor(new Date().getFullYear() / 100) * 100 + year; //If two digit year, make it 4 digit
   }
 
-  // console.log(linkAnswers(year, standard));
-  downloadPaper(directory, linkAnswers(year, standard, result.standardName), result.downloadOptions);
+  downloadPaper(directory, linkAnswers(year, standardCode, result.standardName), result.downloadOptions);
   return 0;
 }
 
 
 
 
-let linkAnswers = (year, standard, standardName) => {
+let linkAnswers = (year, standardCode, standardName) => {
   let baseLink = "http://www.nzqa.govt.nz/nqfdocs/ncea-resource";
   let obj = {
     year: year,
-    standard: standard,
+    standardCode: standardCode,
     standardName: standardName,
-    exam: `${baseLink}/exams/${year}/${standard}-exm-${year}.pdf`,
-    marking: `${baseLink}/schedules/${year}/${standard}-ass-${year}.pdf`, 
-    notachieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-notachieved.pdf`,
-    achieved: `${baseLink}/examplars/${year}/${standard}-exp-${year}-achieved.pdf`,
-    merit: `${baseLink}/examplars/${year}/${standard}-exp-${year}-merit.pdf`,
-    excellence: `${baseLink}/examplars/${year}/${standard}-exp-${year}-excellence.pdf`,
-    resource: `${baseLink}/exams/${year}/${standard}-res-${year}.pdf`
+    exam: `${baseLink}/exams/${year}/${standardCode}-exm-${year}.pdf`,
+    marking: `${baseLink}/schedules/${year}/${standardCode}-ass-${year}.pdf`, 
+    notachieved: `${baseLink}/examplars/${year}/${standardCode}-exp-${year}-notachieved.pdf`,
+    achieved: `${baseLink}/examplars/${year}/${standardCode}-exp-${year}-achieved.pdf`,
+    merit: `${baseLink}/examplars/${year}/${standardCode}-exp-${year}-merit.pdf`,
+    excellence: `${baseLink}/examplars/${year}/${standardCode}-exp-${year}-excellence.pdf`,
+    resource: `${baseLink}/exams/${year}/${standardCode}-res-${year}.pdf`
   };
   return obj;
 };
@@ -238,70 +237,28 @@ let linkAnswers = (year, standard, standardName) => {
 
 
 let downloadPaper = (folder, object, toDownload) => {
-  // return 0; //Temporary
-  console.log(`Downloading ${object.year} ${object.standard} papers to ${folder}`);
+  console.log(`Downloading ${object.year} ${object.standardCode} papers to ${folder}`);
 
-
-  //let getFileName = (object, type) => `${object.standard}-${object.year}-${type}.pdf`;
-  //let folder = baseFolder;
   for (let i = toDownload.length - 1; i >= 0; i--) {
-    if (fs.existsSync(name.concatDir(folder, name.standardFile(object.standard, object.year, toDownload[i])))) {
+    if (fs.existsSync(name.concatDir(folder, name.standardFile(object.standardCode, object.year, toDownload[i])))) {
       //Checks if the file that is going to be created actually exists
-      console.log(`'${name.standardFile(object.standard, object.year, toDownload[i])}' already exists: skipping download`);
+      console.log(`'${name.standardFile(object.standardCode, object.year, toDownload[i])}' already exists: skipping download`);
       toDownload = toDownload.splice(i, 1); //Remove element from the array
       //Going in reverse, so removing an element will have no effect on the ones before it
     }
   }
 
+  return 0;
   Promise.all(toDownload.map(i=>download(object[i], folder, {
-      filename: name.standardFile(object.standard, object.year , i)
+      filename: name.standardFile(object.standardCode, object.year , i)
     }))).then(val=> {
-      console.log(`Downloads for ${object.year} ${object.standard} finished`);
+      console.log(`Downloads for ${object.year} ${object.standardCode} finished`);
     }).catch(err=>{
       if (err.name == "HTTPError" && err.statusCode == 404) {
         console.log(`404 (File not found) error downloading '${err.url}'`);
       }
-    });
-  
-/*
-  completed = 0;
-  let downloadFile = (object, type) => {
-    let options = {
-      directory: baseFolder + object.standard + "/",
-      //type is string: paper/excellence/marking
-      filename: object.standard + "-" + object.year + "-" + type + ".pdf"
-    };
-
-    let subjectData;
-    download(object[type], options, err => {
-      if (err) {
-        console.log(`${object.year} ${type} paper for standard ${object.standard} not downloaded: ${err}`);
-      } else {
-        console.log("Parsing PDF for subject");
-        let subject;
-        getSubject(options.directory + options.filename).then(val=>subjectData = val).catch(err=>console.log(err));
-
-        console.log(`${object.year} ${type} paper for standard ${object.standard} downloaded`);
+      else {
+        console.log(`An error occured: ${err}`);
       }
-      completed++;
     });
-  };
-
-  for (let i of toDownload) {
-    downloadFile(object, i);
-  }
-
-  while(completed < toDownload.length - 1) {
-    //If not all have finished
-    //Infinite loop- not good
-  }
-  
-  if (subjectData) {
-    //If subject data is found
-    console.log(`Attempting to move '${baseFolder}${object.standard}/' to ${baseFolder}.${subjectData.subject}/${object.standard}`);
-    mv(baseFolder + object.standard, baseFolder + subjectData.subject + "/" + object.standard, err=> {
-      console.log(`Error moving folder: ${err}`);
-    });
-  }
-  */
 };
