@@ -98,15 +98,15 @@ inquirer.prompt([{
   let func = (options, dir) => {
     //Because async/promises
     let newDir = directorySearch(dir, 
-      folder => (folder.match(val.standardCode) || folder.toLowerCase().match(val.standardName.toLowerCase)), 2);
+      folder => (folder.includes(val.standardCode) || folder.toLowerCase().includes(val.standardName.toLowerCase)), 2);
     //newDir is the full path of the new directory
     if (newDir) {
       console.log(`Automatically detected folder, ${name.concatDir(newDir)}`);
-      parseInput(val, name.concatDir(newDir));
+      parseInput(val, newDir);
     }
     else {
       console.log(`Downloading to folder, ${name.concatDir(baseFolder, deepest)}`);
-      parseInput(val, name.concatDir(baseFolder, name.standardFolder(val.standardCode, val.standardName)));
+      parseInput(val, name.concatDir(dir, name.standardFolder(val.standard, val.standardName)));
     }
   };
   
@@ -134,8 +134,10 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
   //Directory filter accepts the directory name and full path name as arguments
   //maxSearchDepth is the levels it will travel. 0 for no limit
   directory = name.concatDir(directory); //clean up backslashes
+
   let dirArr = directory.split("/"); //create array of directories
   deepest = dirArr[dirArr.length - 2]; //The name of the 'deepest' directory. -2 as string ends with a /, so will be an empty string. Thus, the second to last one.
+
 
   if (directoryFilter(deepest, directory)) return directory; //Check if the current directory matches the function
  
@@ -146,8 +148,7 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
 
       try {
         let folders = fs.readdirSync(directory).filter(name => !name.match(reg.file));
-        console.log(folders);
-        console.log("!");
+      
         //Get list of stuff in directory, and remove files from it
         for (let i of folders) {
           //Look through each subdirectory
@@ -170,6 +171,7 @@ function directorySearch(directory, directoryFilter, maxSearchDepth = 1) {
       }
     };
     let dirName = search(directory, 1, maxSearchDepth); //Start depth at 0
+    console.log(dirName);
     if (dirName) return dirName;
   }
 
@@ -251,7 +253,7 @@ let downloadPaper = (folder, object, toDownload) => {
   Promise.all(toDownload.map(i=>download(object[i], folder, {
       filename: name.standardFile(object.standard, object.year , i)
     }))).then(val=> {
-      console.log(`Downloads finished: ${val}`);
+      console.log(`Downloads for ${object.year} ${object.standardName} finished`);
     }).catch(err=>{
       if (err.name == "HTTPError" && err.statusCode == 404) {
         console.log(`404 (File not found) error downloading '${err.url}'`);
